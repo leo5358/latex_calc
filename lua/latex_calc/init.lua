@@ -106,7 +106,6 @@ local function handle_tab()
     if state.current_result then
         local result = state.current_result
         -- 這裡我們只回傳結果，清空 Ghost Text 則放在下一行執行
-        -- 注意：清空動作可以用 schedule 避開 expr 限制
         local text_to_insert = result
         vim.schedule(function()
             clear_ghost_text()
@@ -120,6 +119,7 @@ end
 local function setup_autocmds()
     local group = vim.api.nvim_create_augroup("LatexCalc", { clear = true })
 
+    -- 監聽文字變動與游標移動，觸發 Ghost Text 顯示
     vim.api.nvim_create_autocmd({ "TextChangedI", "CursorMovedI" }, {
         group = group,
         pattern = "*.tex",
@@ -128,35 +128,42 @@ local function setup_autocmds()
         end,
     })
 
+    -- 離開插入模式時清除 Ghost Text
     vim.api.nvim_create_autocmd("InsertLeave", {
         group = group,
         pattern = "*.tex",
         callback = clear_ghost_text,
+    })
+
+    -- 確保每次開啟或進入 tex 檔案時，該 Buffer 都會被綁定按鍵
+    vim.api.nvim_create_autocmd("FileType", {
+        group = group,
+        pattern = "tex",
+        callback = function(args)
+            vim.keymap.set("i", M.config.trigger_key, function()
+                local result = handle_tab()
+                if result then
+                    -- 如果有結果，直接 return 字串讓 Neovim 插入
+                    return result
+                else
+                    -- 否則執行正常 Tab（解決 blink.cmp 衝突的關鍵）
+                    -- 這裡必須使用 api.nvim_replace_termcodes 確保回傳正確的鍵碼
+                    return vim.api.nvim_replace_termcodes(M.config.trigger_key, true, true, true)
+                end
+            end, {
+                buffer = args.buf, -- 綁定到觸發此事件的 Buffer
+                expr = true,
+                replace_keycodes = false,
+                desc = "LaTeX Calc: Insert result or normal tab",
+            })
+        end,
     })
 end
 
 -- 初始化插件
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
-
     setup_autocmds()
-
-    -- 設定 Tab 鍵映射
-    vim.keymap.set("i", M.config.trigger_key, function()
-        local result = handle_tab()
-        if result then
-            -- 如果有結果，直接 return 字串讓 Neovim 插入
-            return result
-        else
-            -- 否則執行正常 Tab（解決 blink.cmp 衝突的關鍵）
-            return vim.api.nvim_replace_termcodes(M.config.trigger_key, true, true, true)
-        end
-    end, {
-        buffer = true,
-        expr = true,
-        replace_keycodes = false, -- 因為我們已經手動 replace 了
-        desc = "LaTeX Calc: Insert result or normal tab",
-    })
 end
 
 function M.calculate()
