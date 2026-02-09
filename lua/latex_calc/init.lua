@@ -8,7 +8,7 @@ M.config = {
     calc_script = vim.fn.stdpath("config") .. "/lua/latex_calc/python/calc.py",
     highlight_group = "Comment",
     trigger_key = "<Tab>",
-    debounce_ms = 250,
+    debounce_ms = 250, -- 防抖動延遲
 }
 
 -- 狀態管理
@@ -22,7 +22,6 @@ local state = {
 
 -- 清除 Ghost Text
 local function clear_ghost_text()
-    -- 這裡使用 pcall 避免如果 buffer 已經關閉導致的錯誤
     local bufnr = vim.api.nvim_get_current_buf()
     if vim.api.nvim_buf_is_valid(bufnr) then
         vim.api.nvim_buf_clear_namespace(bufnr, state.ns_id, 0, -1)
@@ -32,7 +31,7 @@ local function clear_ghost_text()
     state.current_col = nil
 end
 
--- [Fix] 顯示 Ghost Text (新增參數 target_bufnr)
+-- [Fix] 顯示 Ghost Text (包含安全檢查)
 local function show_ghost_text(target_bufnr, line, col, text)
     -- 如果結果是空的，就不顯示
     if not text or text:match("^%s*$") then
@@ -40,26 +39,23 @@ local function show_ghost_text(target_bufnr, line, col, text)
         return
     end
 
-    -- [Fix] 安全檢查 1: Buffer 是否還有效？
+    -- 安全檢查 1: Buffer 是否還有效？
     if not vim.api.nvim_buf_is_valid(target_bufnr) then
         return
     end
 
-    -- [Fix] 安全檢查 2: 行數是否超出範圍？(防止使用者刪除行後導致崩潰)
+    -- 安全檢查 2: 行數是否超出範圍？
     local line_count = vim.api.nvim_buf_line_count(target_bufnr)
     if line >= line_count then
         return
     end
 
-    -- 清除舊的 (這裡簡單處理，清除當前顯示的)
     clear_ghost_text()
 
-    -- 更新狀態
     state.current_result = text
     state.current_line = line
     state.current_col = col
 
-    -- 設定 Ghost Text
     vim.api.nvim_buf_set_extmark(target_bufnr, state.ns_id, line, col, {
         virt_text = { { " " .. text, M.config.highlight_group } },
         virt_text_pos = "overlay",
@@ -98,9 +94,6 @@ local function call_calculator(latex_expr, callback)
                 end)
             end
         end,
-        on_stderr = function(_, data)
-            -- 錯誤處理 (可選)
-        end,
         on_exit = function()
             os.remove(temp_file)
         end,
@@ -113,7 +106,6 @@ local function parse_current_line()
         return
     end
 
-    -- [Fix] 捕捉當前的 Buffer ID，確保回調時是操作同一個檔案
     local bufnr = vim.api.nvim_get_current_buf()
     local line = vim.api.nvim_get_current_line()
     local cursor = vim.api.nvim_win_get_cursor(0)
@@ -133,8 +125,32 @@ local function parse_current_line()
         return
     end
 
+    -- [Feature] 檢查游標後方內容
+    -- 防止在已經有結果時（例如 $ 1+1=2 $）回頭編輯等號觸發 ghost text
+    local after_cursor = line:sub(col + 1)
+    local trimmed = after_cursor:match("^%s*(.*)") -- 去除前導空白
+
+    if trimmed ~= "" then
+        -- 定義允許的「結尾字符」
+        -- 意思是：如果游標後面是這些符號，代表這行算式已經結束，可以顯示計算結果。
+        -- 如果不是這些符號（例如是數字 2 或變數 x），代表後面已經有東西了，則不顯示。
+        local is_closer = trimmed:sub(1, 1) == "}"
+            or trimmed:sub(1, 1) == ")"
+            or trimmed:sub(1, 1) == "]"
+            or trimmed:sub(1, 1) == "$"
+            or trimmed:sub(1, 1) == "%" -- 允許後面跟著註解
+            or trimmed:sub(1, 2) == "\\\\" -- 換行符號 \\
+            or trimmed:sub(1, 2) == "\\)" -- Inline math 結尾
+            or trimmed:sub(1, 2) == "\\]" -- Display math 結尾
+            or trimmed:sub(1, 4) == "\\end" -- 環境結尾
+
+        if not is_closer then
+            clear_ghost_text()
+            return
+        end
+    end
+
     call_calculator(expr, function(result)
-        -- [Fix] 將當初的 bufnr 傳遞給 show_ghost_text
         show_ghost_text(bufnr, row, col, result)
     end)
 end
