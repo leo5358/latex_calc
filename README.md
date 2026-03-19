@@ -4,6 +4,8 @@ A powerful Neovim plugin that calculates LaTeX math expressions in real-time usi
 
 Powered by Python's `SymPy` library for accurate symbolic and numerical calculations.
 
+![demo.gif](https://meee.com.tw/546Pic0.gif)
+
 ## Features
 
 - **Real-time Preview**: Shows the calculation result as ghost text next to your equation.
@@ -12,7 +14,7 @@ Powered by Python's `SymPy` library for accurate symbolic and numerical calculat
 - **Complex Math Support**: Handles arithmetic, integrals, derivatives, and simplifications supported by SymPy.
 - **Automatic Setup**: Includes an installation script to handle Python dependencies and virtual environments.
 
-## ⚡ Prerequisites
+## Prerequisites
 
 Before installing, ensure you have the following:
 
@@ -76,7 +78,7 @@ chmod +x install.sh
 
 
 
-## ⚙️ Configuration
+## Configuration
 
 Pass these options to the `setup()` function or the `opts` table in Lazy.nvim:
 
